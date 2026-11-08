@@ -1,8 +1,12 @@
 #include "MainComponent.h"
+#include "Mp3Decode.h"
 #include "Dsp.h"
 
 namespace ui
+
 {
+namespace { std::shared_ptr<Mastered> doMaster (std::shared_ptr<master::Stereo>, master::Analysis, master::Settings, bool, master::Analysis,
+                                    const std::function<bool (float)>&, juce::int64 from = 0, juce::int64 len = -1); }
 using namespace juce;
 
 // ------------------------------------------------------------------ Fichiers audio
@@ -35,20 +39,50 @@ static std::vector<float> computePeaks (const master::Stereo& a, int cols = 1000
 static std::shared_ptr<Loaded> readAndAnalyse (const File& f, const std::function<bool (float)>& progress)
 {
     auto out = std::make_shared<Loaded>();
-    AudioFormatManager fm; fm.registerBasicFormats();
-    std::unique_ptr<AudioFormatReader> r (fm.createReaderFor (f));
-    if (! r) { out->error = "Format non pris en charge (WAV, AIFF, FLAC, MP3, OGG)."; return out; }
-    if (r->lengthInSamples < 4096) { out->error = "Fichier trop court."; return out; }
-    if (r->lengthInSamples > (int64) 1 << 26) { out->error = "Fichier trop long (25 min maximum)."; return out; }
-    const int n = (int) r->lengthInSamples;
-    AudioBuffer<float> b ((int) jmax (2u, r->numChannels), n);
-    b.clear();
-    if (! r->read (&b, 0, n, 0, true, true)) { out->error = "Lecture du fichier impossible."; return out; }
     auto a = std::make_shared<master::Stereo>();
-    a->fs = r->sampleRate;
-    const int chR = r->numChannels > 1 ? 1 : 0;
-    a->l.assign (b.getReadPointer (0), b.getReadPointer (0) + n);
-    a->r.assign (b.getReadPointer (chR), b.getReadPointer (chR) + n);
+    constexpr int64 maxFrames = (int64) 1 << 26;
+    String meta;
+    bool decoded = false;
+    String firstError;
+
+    auto fillMeta = [&] (double fs, int ch, int bits)
+    {
+        meta = String (fs / 1000.0, 1) + " kHz  ·  " + String (ch) + (ch > 1 ? tr (" canaux") : tr (" canal"))
+             + "  ·  " + fmtTime (a->seconds()) + (bits > 0 ? "  ·  " + String (bits) + " bits" : String());
+    };
+
+    // MP3 : décodeur dédié d'abord (tolère tags ID3, pochettes, VBR...), JUCE en secours
+    if (f.hasFileExtension ("mp3"))
+    {
+        auto d = master::decodeMp3 (f, maxFrames);
+        if (d.ok)
+        {
+            a->fs = d.fs; a->l = std::move (d.l); a->r = std::move (d.r);
+            fillMeta (d.fs, d.channels, 0);
+            decoded = true;
+        }
+        else firstError = d.error;
+    }
+
+    if (! decoded)
+    {
+        AudioFormatManager fm; fm.registerBasicFormats();
+        fm.registerFormat (new MP3AudioFormat(), false);
+        std::unique_ptr<AudioFormatReader> r (fm.createReaderFor (f));
+        if (! r) { out->error = firstError.isNotEmpty() ? firstError : "Format non pris en charge (WAV, AIFF, FLAC, MP3, OGG)."; return out; }
+        if (r->lengthInSamples < 4096) { out->error = "Fichier trop court."; return out; }
+        if (r->lengthInSamples > maxFrames) { out->error = "Fichier trop long (25 min maximum)."; return out; }
+        const int n = (int) r->lengthInSamples;
+        AudioBuffer<float> b ((int) jmax (2u, r->numChannels), n);
+        b.clear();
+        if (! r->read (&b, 0, n, 0, true, true)) { out->error = "Lecture du fichier impossible."; return out; }
+        a->fs = r->sampleRate;
+        const int chR = r->numChannels > 1 ? 1 : 0;
+        a->l.assign (b.getReadPointer (0), b.getReadPointer (0) + n);
+        a->r.assign (b.getReadPointer (chR), b.getReadPointer (chR) + n);
+        fillMeta (r->sampleRate, (int) r->numChannels, (int) r->bitsPerSample);
+    }
+
     if (progress && ! progress (0.15f)) { out->error = "Annulé."; return out; }
     out->an = master::analyse (*a, [&] (float p) { return ! progress || progress (0.15f + 0.85f * p); });
     if (! out->an.valid) { out->error = "Annulé."; return out; }
@@ -56,8 +90,7 @@ static std::shared_ptr<Loaded> readAndAnalyse (const File& f, const std::functio
     out->audio = a;
     out->name = f.getFileName();
     out->file = f;
-    out->meta = String (r->sampleRate / 1000.0, 1) + " kHz  ·  " + String ((int) r->numChannels) + (r->numChannels > 1 ? tr (" canaux") : tr (" canal"))
-              + "  ·  " + fmtTime (a->seconds()) + "  ·  " + String ((int) r->bitsPerSample) + " bits";
+    out->meta = meta;
     out->ok = true;
     return out;
 }
@@ -75,10 +108,11 @@ public:
     }
     void releaseResources() override {}
 
-    void setBuffers (std::shared_ptr<const master::Stereo> o, std::shared_ptr<const master::Stereo> m)
+    // m couvre [off, off + m->size()) de la timeline de l'original (aperçu partiel pendant le calcul exact)
+    void setBuffers (std::shared_ptr<const master::Stereo> o, std::shared_ptr<const master::Stereo> m, int64 off = 0)
     {
         const SpinLock::ScopedLockType sl (lock);
-        orig = std::move (o); mast = std::move (m);
+        orig = std::move (o); mast = std::move (m); mastOff = off;
         if (! orig) { playing = false; pos = 0; }
     }
     double fraction() const
@@ -100,20 +134,23 @@ public:
         info.clearActiveBufferRegion();
         const SpinLock::ScopedTryLockType sl (lock);
         if (! sl.isLocked() || ! playing) return;
-        const auto buf = (useMaster && mast) ? mast : orig;
-        if (! buf) return;
-        const float g = (useMaster && mast) ? gM : gO;
+        if (! orig) return;
         const int n = info.numSamples;
-        const double ratio = buf->fs / deviceFs;
-        const int total = buf->size();
+        const double ratio = orig->fs / deviceFs;
+        const int totalO = orig->size();
         int64 p = pos;
-        if (p >= total) { playing = false; pos = 0; return; }
-
+        if (p >= totalO) { playing = false; pos = 0; return; }
         const int need = (int) std::ceil (n * ratio) + 8;
         if (need > (int) inL.size()) return;
+        // le master n'est lu que si le bloc entier est couvert, sinon repli sur l'original
+        const bool useM = useMaster && mast && p >= mastOff && p + need <= mastOff + mast->size();
+        const auto buf = useM ? mast : orig;
+        const int64 base = useM ? mastOff : 0;
+        const float g = useM ? gM : gO;
+        const int total = buf->size();
         for (int i = 0; i < need; ++i)
         {
-            const int64 idx = p + i;
+            const int64 idx = p - base + i;
             inL[(size_t) i] = idx < total ? buf->l[(size_t) idx] : 0.0f;
             inR[(size_t) i] = idx < total ? buf->r[(size_t) idx] : 0.0f;
         }
@@ -141,7 +178,7 @@ public:
         }
         lastGain = g;
         pos = p + used;
-        if (pos >= total) { playing = false; pos = 0; lastGain = -1.0f; }
+        if (pos >= totalO) { playing = false; pos = 0; lastGain = -1.0f; }
     }
 
     mutable SpinLock lock;
@@ -150,6 +187,7 @@ public:
     std::atomic<int64> pos { 0 };
 private:
     std::shared_ptr<const master::Stereo> orig, mast;
+    int64 mastOff = 0;
     double deviceFs = 44100.0;
     float lastGain = -1.0f;
     std::vector<float> outL, outR, inL, inR;
@@ -413,7 +451,7 @@ public:
         else
         {
             g.setColour (textDimmer);
-            g.drawText (tr ("Aucun mastering pour l'instant : lance MASTERISER."), x0, y + 3, colA - x0 + 10, 14, Justification::centredLeft);
+            g.drawText (tr ("Aucun mastering pour l'instant."), x0, y + 3, colA - x0 + 10, 14, Justification::centredLeft);
         }
         auto right = Rectangle<int> (colA + 22, 2, w - colA - 22 - 8, getHeight() - 4);
         std::vector<master::Warning> warns;
@@ -466,7 +504,7 @@ MainComponent::MainComponent()
     wave->onSeek = [this] (double f) { if (player) player->seek (f); repaint(); };
     playBtn->onClick = [this] { togglePlay(); };
 
-    for (auto* b : { &abOrig, &abMaster, &masterBtn, &exportBtn, &langFr, &langEn })
+    for (auto* b : { &abOrig, &abMaster, &exportBtn, &langFr, &langEn })
         addAndMakeVisible (b);
     for (auto& c : chips) addAndMakeVisible (c);
     addAndMakeVisible (matchToggle); addAndMakeVisible (refToggle); addAndMakeVisible (formatBox);
@@ -480,8 +518,8 @@ MainComponent::MainComponent()
     langFr.setToggleState (true, dontSendNotification);
     langFr.onClick = [this] { setEnglish (false); }; langEn.onClick = [this] { setEnglish (true); };
 
-    masterBtn.getProperties().set ("primary", true);
-    masterBtn.onClick = [this] { if (busy) { cancelFlag = true; } else startMaster(); };
+    exportBtn.getProperties().set ("primary", true);
+    masterBtn.setVisible (false);
     exportBtn.onClick = [this] { startExport(); };
 
     matchToggle.setToggleState (true, dontSendNotification);
@@ -539,7 +577,6 @@ void MainComponent::relabel()
     const bool en = englishRef();
     for (int i = 0; i < master::kNumStyles; ++i) chips[i].setButtonText (CharPointer_UTF8 (en ? master::style (i).nameEn : master::style (i).nameFr));
     abOrig.setButtonText (tr ("ORIGINAL")); abMaster.setButtonText (tr ("MASTER"));
-    masterBtn.setButtonText (busy ? tr ("ANNULER") : tr ("MASTERISER"));
     exportBtn.setButtonText (tr ("EXPORTER…"));
     matchToggle.setButtonText (tr ("Volume égalisé"));
     refToggle.setButtonText (tr ("Utiliser comme référence"));
@@ -547,7 +584,7 @@ void MainComponent::relabel()
     formatBox.clear (dontSendNotification);
     formatBox.addItem (tr ("24 bits"), 1); formatBox.addItem (tr ("16 bits"), 2); formatBox.addItem (tr ("32 float"), 3);
     formatBox.setSelectedId (sel > 0 ? sel : 1, dontSendNotification);
-    trackZone->hint = tr ("Glisse un fichier audio ici (WAV, AIFF, FLAC) ou clique pour parcourir");
+    trackZone->hint = tr ("Glisse un fichier audio ici (WAV, MP3, FLAC, AIFF) ou clique pour parcourir");
     refZone->hint = tr ("Glisse un morceau de référence (optionnel)");
     langFr.setToggleState (! en, dontSendNotification); langEn.setToggleState (en, dontSendNotification);
     repaint();
@@ -640,9 +677,8 @@ void MainComponent::resized()
         chips[i].setBounds (34 + (i % 3) * 98, 500 + 34 + (i / 3) * 40, 92, 32);
     for (int i = 0; i < 5; ++i)
         knobs[i].setBounds (342 + 18 + i * 82, 500 + 28, 58, 58);
-    masterBtn.setBounds (808, 500 + 14, 158, 40);
-    exportBtn.setBounds (808, 500 + 74, 88, 30);
-    formatBox.setBounds (902, 500 + 74, 64, 30);
+    exportBtn.setBounds (808, 500 + 28, 158, 44);
+    formatBox.setBounds (808, 500 + 82, 158, 30);
     langFr.setBounds (designW - 20 - 76, 22, 36, 24);
     langEn.setBounds (designW - 20 - 38, 22, 36, 24);
 }
@@ -677,14 +713,50 @@ void MainComponent::setStyleIndex (int i)
     repaint();
 }
 
-void MainComponent::markDirty()
+void MainComponent::markDirty() { requestLive (false); }
+
+// Écoute en direct : tout changement de réglage relance (après 180 ms) un aperçu autour de la tête de lecture,
+// puis le rendu exact du morceau entier. Les calculs obsolètes sont annulés via liveGen.
+void MainComponent::requestLive (bool immediate)
 {
-    if (! mastered || ! mastered->ok || busy) return;
-    const auto a = currentSettings(), b = mastered->settings;
-    const bool refNow = refToggle.getToggleState() && reference && reference->ok;
-    const bool changed = a.style != b.style || a.targetLufs != b.targetLufs || a.glue != b.glue || a.punch != b.punch || a.bright != b.bright || a.width != b.width
-                         || refNow != (mastered->rep.targetBands.size() > 0 && usedReference);
-    if (changed != dirty) { dirty = changed; setStatus (dirty ? tr ("Réglages modifiés : relance le mastering.") : tr ("Master terminé. Compare avec A/B (volume égalisé).")); }
+    if (! autoLive || ! track || ! track->ok) return;
+    ++liveGen;
+    livePending = true;
+    liveDueAt = Time::getMillisecondCounter() + (immediate ? 0u : 180u);
+    liveComputing = true;
+    if (mastered) mastered->full = false;
+    setStatus (tr ("Calcul du master…"));
+    updateEnabled();
+}
+
+void MainComponent::launchLive()
+{
+    livePending = false;
+    if (! track || ! track->ok) return;
+    const int gen = liveGen.load();
+    const auto s = currentSettings();
+    const bool useRef = refToggle.getToggleState() && reference && reference->ok;
+    const auto refAn = useRef ? reference->an : master::Analysis();
+    auto in = track->audio; auto an = track->an;
+    const int64 fs = (int64) in->fs, total = in->size();
+    const int64 pos = player ? player->pos.load() : 0;
+    const int64 winLen = 24 * fs;
+    const bool needPreview = total > 2 * winLen;
+    const int64 from = jlimit ((int64) 0, jmax ((int64) 0, total - winLen), pos - fs);
+    WeakReference<MainComponent> self (this);
+    runJob ([self, this, in, an, s, useRef, refAn, gen, from, winLen, needPreview]
+    {
+        const auto alive = [this, gen] (float) { return liveGen.load() == gen; };
+        if (needPreview)
+        {
+            auto pre = doMaster (in, an, s, useRef, refAn, alive, from, winLen);
+            if (liveGen.load() != gen) return;
+            MessageManager::callAsync ([self, pre, gen, useRef] { if (self != nullptr) self->applyLive (pre, gen, useRef); });
+        }
+        auto full = doMaster (in, an, s, useRef, refAn, alive);
+        if (liveGen.load() != gen) return;
+        MessageManager::callAsync ([self, full, gen, useRef] { if (self != nullptr) self->applyLive (full, gen, useRef); });
+    });
 }
 
 void MainComponent::setAB (bool m)
@@ -766,14 +838,25 @@ struct FnJob : ThreadPoolJob
 };
 
 std::shared_ptr<Mastered> doMaster (std::shared_ptr<master::Stereo> in, master::Analysis an, master::Settings s, bool useRef, master::Analysis refAn,
-                                    const std::function<bool (float)>& progress)
+                                    const std::function<bool (float)>& progress, int64 from, int64 len)
 {
     auto res = std::make_shared<Mastered>();
     if (useRef) s.reference = &refAn;
-    res->ok = master::masterAudio (*in, an, s, *(res->audio = std::make_shared<master::Stereo>()), res->rep, progress);
+    res->offset = from;
+    res->full = (from == 0 && (len < 0 || len >= in->size()));
+    std::shared_ptr<master::Stereo> src = in;
+    if (! res->full)   // aperçu : le segment est masterisé avec l'analyse (EQ, niveau interne) de tout le morceau
+    {
+        src = std::make_shared<master::Stereo>();
+        src->fs = in->fs;
+        const int64 e = jmin ((int64) in->size(), from + len);
+        src->l.assign (in->l.begin() + from, in->l.begin() + e);
+        src->r.assign (in->r.begin() + from, in->r.begin() + e);
+    }
+    res->ok = master::masterAudio (*src, an, s, *(res->audio = std::make_shared<master::Stereo>()), res->rep, progress);
     s.reference = nullptr;
     res->settings = s;
-    if (res->ok) res->peaks = computePeaks (*res->audio);
+    if (res->ok && res->full) res->peaks = computePeaks (*res->audio);
     return res;
 }
 
@@ -837,13 +920,13 @@ void MainComponent::startLoadReference (const File& f)
         MessageManager::callAsync ([self, res] { if (self != nullptr) self->applyReference (res); });
     });
 }
-void MainComponent::loadTrackSync (const File& f) { busy = true; applyTrack (readAndAnalyse (f, nullptr)); }
-void MainComponent::loadReferenceSync (const File& f) { busy = true; applyReference (readAndAnalyse (f, nullptr)); }
+void MainComponent::loadTrackSync (const File& f) { busy = true; autoLive = false; applyTrack (readAndAnalyse (f, nullptr)); }
+void MainComponent::loadReferenceSync (const File& f) { busy = true; autoLive = false; applyReference (readAndAnalyse (f, nullptr)); }
 
 void MainComponent::applyTrack (std::shared_ptr<Loaded> res)
 {
     busy = false; trackZone->busyNow = false;
-    trackZone->hint = tr ("Glisse un fichier audio ici (WAV, AIFF, FLAC) ou clique pour parcourir");
+    trackZone->hint = tr ("Glisse un fichier audio ici (WAV, MP3, FLAC, AIFF) ou clique pour parcourir");
     if (! res || ! res->ok) { setStatus (cancelFlag ? tr ("Annulé.") : (res && res->error.isNotEmpty() ? tr (res->error) : tr ("Fichier illisible ou trop long.")), true); updateEnabled(); repaint(); return; }
     track = res; mastered.reset(); dirty = false; usedReference = false;
     trackZone->loaded = true; trackZone->name = res->name; trackZone->meta = res->meta;
@@ -855,6 +938,8 @@ void MainComponent::applyTrack (std::shared_ptr<Loaded> res)
     player->setBuffers (res->audio, nullptr); player->seek (0.0);
     setAB (false); updatePlaybackGains(); updateEnabled();
     setStatus (tr ("Prêt. Choisis un style puis lance le mastering."));
+    liveComputing = false; liveGen++;
+    requestLive (true);
     repaint();
 }
 
@@ -873,50 +958,44 @@ void MainComponent::applyReference (std::shared_ptr<Loaded> res)
     repaint();
 }
 
-void MainComponent::startMaster()
-{
-    if (busy || ! track || ! track->ok) return;
-    busy = true; cancelFlag = false; progress = 0.0f; dirty = false;
-    setStatus (tr ("Mastering en cours…")); updateEnabled();
-    const auto s = currentSettings();
-    const bool useRef = refToggle.getToggleState() && reference && reference->ok;
-    const auto refAn = useRef ? reference->an : master::Analysis();
-    auto in = track->audio; auto an = track->an;
-    WeakReference<MainComponent> self (this);
-    runJob ([self, this, in, an, s, useRef, refAn]
-    {
-        auto res = doMaster (in, an, s, useRef, refAn, [this] (float p) { progress = p; return ! cancelFlag.load(); });
-        MessageManager::callAsync ([self, res, useRef] { if (self != nullptr) { self->usedReference = useRef; self->applyMaster (res); } });
-    });
-}
+void MainComponent::startMaster() { requestLive (true); }
 
 void MainComponent::masterSync()
 {
     if (! track || ! track->ok) return;
-    busy = true; dirty = false;
     const auto s = currentSettings();
     const bool useRef = refToggle.getToggleState() && reference && reference->ok;
-    usedReference = useRef;
-    applyMaster (doMaster (track->audio, track->an, s, useRef, useRef ? reference->an : master::Analysis(), nullptr));
+    ++liveGen; livePending = false;
+    applyLive (doMaster (track->audio, track->an, s, useRef, useRef ? reference->an : master::Analysis(), nullptr), liveGen.load(), useRef);
 }
 
-void MainComponent::applyMaster (std::shared_ptr<Mastered> res)
+void MainComponent::applyLive (std::shared_ptr<Mastered> res, int gen, bool useRef)
 {
-    busy = false;
+    if (gen != liveGen.load()) return;   // résultat obsolète
     if (! res || ! res->ok)
     {
+        liveComputing = false;
         const bool silent = res && ! res->rep.warnings.empty() && res->rep.warnings.front().code == master::WarnSilent;
-        setStatus (cancelFlag ? tr ("Annulé.") : (silent ? tr ("Morceau silencieux : rien à masteriser.") : tr ("Mastering impossible.")), true);
+        setStatus (silent ? tr ("Morceau silencieux : rien à masteriser.") : tr ("Mastering impossible."), true);
         updateEnabled(); repaint(); return;
     }
+    const bool first = ! (mastered && mastered->ok);
+    const bool wasMaster = player->useMaster.load();
+    usedReference = useRef;
     mastered = res;
-    wave->mast = res->peaks;
     spec->after = master::normaliseBandsPublic (res->rep.after.bands);
     spec->target = res->rep.targetBands;
     report->m = res; report->targetLufs = res->settings.targetLufs; report->refActive = usedReference;
-    player->setBuffers (track->audio, res->audio);
-    updatePlaybackGains(); updateEnabled(); setAB (true);
-    setStatus (tr ("Master terminé. Compare avec A/B (volume égalisé)."));
+    player->setBuffers (track->audio, res->audio, res->offset);
+    if (res->full) { wave->mast = res->peaks; liveComputing = false; }
+    updatePlaybackGains(); updateEnabled(); setAB (first ? true : wasMaster);
+    setStatus (res->full ? tr ("Master prêt. Chaque réglage s'écoute en direct (A/B à volume égalisé).")
+                         : tr ("Aperçu en direct… calcul exact en cours."));
+    if (res->full && pendingExportBits > 0)
+    {
+        const auto f = pendingExport; const int bits = pendingExportBits; pendingExportBits = 0;
+        exportToFile (f, bits);
+    }
     repaint();
 }
 
@@ -938,6 +1017,12 @@ void MainComponent::exportToFile (const File& file, int bits)
     if (busy || ! mastered || ! mastered->ok) return;
     File f = file;
     if (! f.hasFileExtension ("wav")) f = f.withFileExtension ("wav");
+    if (! mastered->full)   // le fichier exporté est toujours le rendu exact : on attend la fin du calcul
+    {
+        pendingExport = f; pendingExportBits = bits;
+        setStatus (tr ("Calcul du master… l'export démarrera ensuite."));
+        return;
+    }
     busy = true; cancelFlag = false; progress = 0.0f;
     setStatus (tr ("Export en cours…")); updateEnabled();
     auto audio = mastered->audio;
@@ -975,9 +1060,6 @@ AudioBuffer<float> MainComponent::renderPlaybackForTest (double deviceFs, int bl
 void MainComponent::updateEnabled()
 {
     const bool has = track && track->ok;
-    masterBtn.setEnabled (busy ? true : has);
-    masterBtn.setButtonText (busy && ! (trackZone->busyNow || refZone->busyNow) ? tr ("ANNULER") : tr ("MASTERISER"));
-    masterBtn.setEnabled ((busy && ! (trackZone->busyNow || refZone->busyNow)) || (! busy && has));
     exportBtn.setEnabled (! busy && mastered && mastered->ok);
     abMaster.setEnabled (mastered && mastered->ok);
     abOrig.setEnabled (has);
@@ -997,6 +1079,8 @@ void MainComponent::timerCallback()
         trackZone->repaint(); refZone->repaint();
         repaint (794, 500, 186, 124);
     }
+    if (livePending && ! busy && Time::getMillisecondCounter() >= liveDueAt) launchLive();
+    if (liveComputing) repaint (794, 500, 186, 124);
     if (player)
     {
         const bool p = player->playing.load();

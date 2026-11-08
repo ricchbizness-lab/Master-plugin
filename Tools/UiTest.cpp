@@ -7,7 +7,7 @@ static void pump (ui::MainComponent& mc, int maxMs)
 {
     const auto t0 = juce::Time::getMillisecondCounter();
     do { juce::MessageManager::getInstance()->runDispatchLoopUntil (20); }
-    while (mc.isBusy() && juce::Time::getMillisecondCounter() - t0 < (juce::uint32) maxMs);
+    while ((mc.isBusy() || mc.isComputing()) && juce::Time::getMillisecondCounter() - t0 < (juce::uint32) maxMs);
 }
 
 int main (int argc, char** argv)
@@ -33,11 +33,32 @@ int main (int argc, char** argv)
     mc.setStyleIndex (0);
     mc.runMaster();
     pump (mc, 120000);
-    check ("mastering asynchrone terminé", mc.hasMaster(), 0);
+    check ("mastering asynchrone terminé", mc.hasFullMaster(), 0);
     if (! mc.hasMaster()) return 2;
     const auto* r = mc.lastReport();
     check ("LUFS final = cible (-14 ± 0.2)", std::abs (r->after.lufs + 14.0) < 0.2, r->after.lufs);
     check ("true peak <= -1.0 dBTP", r->after.truePeakDb <= -1.0, r->after.truePeakDb);
+
+    // écoute en direct : un changement de style doit produire un aperçu rapide puis le rendu exact
+    {
+        mc.setStyleIndex (3);
+        const auto t0 = juce::Time::getMillisecondCounter();
+        juce::uint32 tPreview = 0, tFull = 0;
+        while (juce::Time::getMillisecondCounter() - t0 < 60000 && ! tFull)
+        {
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+            const auto* rr = mc.lastReport();
+            if (! tPreview && rr && rr->after.seconds < 100.0 && mc.isComputing()) tPreview = juce::Time::getMillisecondCounter() - t0;
+            if (mc.hasFullMaster()) tFull = juce::Time::getMillisecondCounter() - t0;
+        }
+        std::printf ("  live : aperçu après %u ms, rendu exact après %u ms\n", tPreview, tFull);
+        check ("aperçu live < 2 s", tPreview > 0 && tPreview < 2000, tPreview);
+        check ("rendu exact après changement de style", tFull > 0, tFull);
+        // rafale de changements : seul le dernier réglage doit être rendu
+        mc.setStyleIndex (1); mc.setStyleIndex (2); mc.setStyleIndex (4); mc.setStyleIndex (0);
+        pump (mc, 60000);
+        check ("rafale : rendu final cohérent (style 0 → -14 LUFS)", mc.hasFullMaster() && std::abs (mc.lastReport()->after.lufs + 14.0) < 0.2, mc.lastReport() ? mc.lastReport()->after.lufs : 0);
+    }
 
     // export asynchrone puis relecture
     const juce::File out (argv[2]);

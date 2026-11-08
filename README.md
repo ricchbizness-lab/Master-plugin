@@ -6,7 +6,7 @@ Application de mastering assisté (Windows / macOS), dans l'esprit de Waves Onli
 1. Glisse un morceau (WAV, AIFF, FLAC, MP3) dans « Morceau » ou clique pour parcourir.
 2. Optionnel : glisse un morceau de référence. Sa courbe tonale et son volume remplacent ceux du style.
 3. Choisis un style (Équilibré, Club, Chaud, Transparent, Rap / Trap), ajuste Volume (LUFS cible), Glue, Punch, Brillance, Largeur.
-4. MASTERISER. Compare avec ORIGINAL / MASTER (case « Volume égalisé » cochée : les deux sont lus au même volume perçu).
+4. Écoute en direct : chaque réglage (style, potards, référence) s’entend en ~0,5 s pendant la lecture ; le calcul exact finit quelques secondes après. Compare avec ORIGINAL / MASTER (« Volume égalisé » : même volume perçu). EXPORTER… écrit toujours le rendu exact.
 5. EXPORTER : WAV 24 bits (par défaut), 16 bits (dither TPDF) ou 32 float.
 
 ## Chaîne de traitement (offline, fichier entier)

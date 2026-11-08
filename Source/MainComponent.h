@@ -26,6 +26,8 @@ struct Mastered
     std::shared_ptr<master::Stereo> audio;
     master::Report rep;
     master::Settings settings;     // réglages utilisés (sans pointeur de référence)
+    bool full = true;              // false : aperçu partiel autour de la tête de lecture
+    juce::int64 offset = 0;        // position de départ de l'aperçu dans le morceau
     std::vector<float> peaks;
 };
 
@@ -59,6 +61,8 @@ public:
     bool hasTrack() const { return track && track->ok; }
     juce::String statusMessage() const { return statusText; }
     bool hasMaster() const { return mastered && mastered->ok; }
+    bool hasFullMaster() const { return mastered && mastered->ok && mastered->full && ! liveComputing; }
+    bool isComputing() const { return liveComputing; }
     const master::Report* lastReport() const { return mastered ? &mastered->rep : nullptr; }
     juce::AudioBuffer<float> renderPlaybackForTest (double deviceFs, int blockSize, int numBlocks, bool useMaster);
 
@@ -70,7 +74,9 @@ private:
     void chooseTrack(); void chooseReference();
     void startLoadTrack (const juce::File&); void startLoadReference (const juce::File&);
     void startMaster(); void startExport();
-    void applyTrack (std::shared_ptr<Loaded>); void applyReference (std::shared_ptr<Loaded>); void applyMaster (std::shared_ptr<Mastered>);
+    void applyTrack (std::shared_ptr<Loaded>); void applyReference (std::shared_ptr<Loaded>);
+    void applyLive (std::shared_ptr<Mastered>, int gen, bool useRef);
+    void requestLive (bool immediate); void launchLive();
     master::Settings currentSettings() const;
     void markDirty();
     void togglePlay();
@@ -89,6 +95,10 @@ private:
     std::atomic<bool> cancelFlag { false };
     int styleIndex = 0;
     bool dirty = false, usedReference = false;
+    std::atomic<int> liveGen { 0 };
+    bool livePending = false, liveComputing = false, autoLive = true;
+    juce::uint32 liveDueAt = 0;
+    juce::File pendingExport; int pendingExportBits = 0;
     juce::String exportedName;
 
     // interface

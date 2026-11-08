@@ -6,3 +6,5 @@
 - `Source/Look.h` : palette Nebula, look and feel, i18n (`tr()` : clés = textes français, table EN ; toujours `String::fromUTF8` pour les accents).
 - Règle : toute modification du DSP doit repasser `MasterTest selftest` et une comparaison avec `ffmpeg -af ebur128=peak=true` (LUFS et true-peak).
 - Limiteur : le plafond interne est ceiling * 0.97 ; le true-peak final est contrôlé et recalé si besoin.
+- Écoute en direct : tout changement de réglage -> `requestLive` (debounce 180 ms) -> aperçu de 24 s autour de la tête de lecture (`doMaster(from,len)`, ~0,5 s) puis rendu exact du morceau (~3 s pour 3 min). `liveGen` annule les calculs obsolètes. `Player` lit le master seulement si le bloc est couvert (`mastOff`), sinon l'original. L'export attend le rendu exact (`pendingExport`). Le bouton MASTERISER n'existe plus.
+- MP3 : `Source/Mp3Decode.*` (dr_mp3, domaine public, `Source/third_party/`) est essayé d'abord, le décodeur JUCE sert de secours.

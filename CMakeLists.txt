@@ -24,7 +24,7 @@ juce_add_binary_data(MasterAssets SOURCES
     Resources/galaxy.jpg)
 
 # Moteur de mastering (sans interface)
-add_library(MasterCore STATIC Source/MasterEngine.cpp)
+add_library(MasterCore STATIC Source/MasterEngine.cpp Source/Mp3Decode.cpp)
 target_compile_definitions(MasterCore PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_USE_MP3AUDIOFORMAT=1 JUCE_USE_OGGVORBIS=1)
 target_compile_options(MasterCore PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 target_link_libraries(MasterCore PUBLIC juce::juce_dsp juce::juce_audio_formats
