@@ -37,19 +37,21 @@ static std::shared_ptr<Loaded> readAndAnalyse (const File& f, const std::functio
     auto out = std::make_shared<Loaded>();
     AudioFormatManager fm; fm.registerBasicFormats();
     std::unique_ptr<AudioFormatReader> r (fm.createReaderFor (f));
-    if (! r || r->lengthInSamples < 4096 || r->lengthInSamples > (int64) 1 << 26) return out;
+    if (! r) { out->error = "Format non pris en charge (WAV, AIFF, FLAC, MP3, OGG)."; return out; }
+    if (r->lengthInSamples < 4096) { out->error = "Fichier trop court."; return out; }
+    if (r->lengthInSamples > (int64) 1 << 26) { out->error = "Fichier trop long (25 min maximum)."; return out; }
     const int n = (int) r->lengthInSamples;
     AudioBuffer<float> b ((int) jmax (2u, r->numChannels), n);
     b.clear();
-    if (! r->read (&b, 0, n, 0, true, true)) return out;
+    if (! r->read (&b, 0, n, 0, true, true)) { out->error = "Lecture du fichier impossible."; return out; }
     auto a = std::make_shared<master::Stereo>();
     a->fs = r->sampleRate;
     const int chR = r->numChannels > 1 ? 1 : 0;
     a->l.assign (b.getReadPointer (0), b.getReadPointer (0) + n);
     a->r.assign (b.getReadPointer (chR), b.getReadPointer (chR) + n);
-    if (progress && ! progress (0.15f)) return out;
+    if (progress && ! progress (0.15f)) { out->error = "Annulé."; return out; }
     out->an = master::analyse (*a, [&] (float p) { return ! progress || progress (0.15f + 0.85f * p); });
-    if (! out->an.valid) return out;
+    if (! out->an.valid) { out->error = "Annulé."; return out; }
     out->peaks = computePeaks (*a);
     out->audio = a;
     out->name = f.getFileName();
@@ -726,7 +728,7 @@ void MainComponent::togglePlay()
 void MainComponent::setPlayheadForSnapshot (double f) { if (player) player->seek (f); }
 
 // ------------------------------------------------------------------ Fichiers, glisser-déposer
-static bool isAudioFile (const File& f) { return f.hasFileExtension ("wav;aif;aiff;flac;mp3"); }
+static bool isAudioFile (const File& f) { return f.hasFileExtension ("wav;aif;aiff;flac;mp3;ogg;m4a;aac;wma"); }
 
 bool MainComponent::isInterestedInFileDrag (const StringArray& files) { return ! busy && files.size() >= 1 && isAudioFile (File (files[0])); }
 
@@ -741,14 +743,14 @@ void MainComponent::filesDropped (const StringArray& files, int, int y)
 void MainComponent::chooseTrack()
 {
     if (busy) return;
-    chooser = std::make_unique<FileChooser> (tr ("MORCEAU"), File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+    chooser = std::make_unique<FileChooser> (tr ("MORCEAU"), File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a;*.aac;*.wma");
     chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this] (const FileChooser& fc)
     { const auto f = fc.getResult(); if (f != File()) startLoadTrack (f); });
 }
 void MainComponent::chooseReference()
 {
     if (busy) return;
-    chooser = std::make_unique<FileChooser> (tr ("RÉFÉRENCE (OPTIONNEL)"), File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+    chooser = std::make_unique<FileChooser> (tr ("RÉFÉRENCE (OPTIONNEL)"), File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg;*.m4a;*.aac;*.wma");
     chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this] (const FileChooser& fc)
     { const auto f = fc.getResult(); if (f != File()) startLoadReference (f); });
 }
@@ -842,7 +844,7 @@ void MainComponent::applyTrack (std::shared_ptr<Loaded> res)
 {
     busy = false; trackZone->busyNow = false;
     trackZone->hint = tr ("Glisse un fichier audio ici (WAV, AIFF, FLAC) ou clique pour parcourir");
-    if (! res || ! res->ok) { setStatus (cancelFlag ? tr ("Annulé.") : tr ("Fichier illisible ou trop long."), true); updateEnabled(); repaint(); return; }
+    if (! res || ! res->ok) { setStatus (cancelFlag ? tr ("Annulé.") : (res && res->error.isNotEmpty() ? tr (res->error) : tr ("Fichier illisible ou trop long.")), true); updateEnabled(); repaint(); return; }
     track = res; mastered.reset(); dirty = false; usedReference = false;
     trackZone->loaded = true; trackZone->name = res->name; trackZone->meta = res->meta;
     wave->orig = res->peaks; wave->mast.clear();
@@ -859,7 +861,7 @@ void MainComponent::applyTrack (std::shared_ptr<Loaded> res)
 void MainComponent::applyReference (std::shared_ptr<Loaded> res)
 {
     busy = false; refZone->busyNow = false;
-    if (! res || ! res->ok) { setStatus (cancelFlag ? tr ("Annulé.") : tr ("Fichier illisible ou trop long."), true); updateEnabled(); repaint(); return; }
+    if (! res || ! res->ok) { setStatus (cancelFlag ? tr ("Annulé.") : (res && res->error.isNotEmpty() ? tr (res->error) : tr ("Fichier illisible ou trop long.")), true); updateEnabled(); repaint(); return; }
     reference = res;
     refZone->loaded = true; refZone->name = res->name; refZone->meta = res->meta;
     refToggle.setToggleState (true, dontSendNotification);
@@ -904,7 +906,7 @@ void MainComponent::applyMaster (std::shared_ptr<Mastered> res)
     if (! res || ! res->ok)
     {
         const bool silent = res && ! res->rep.warnings.empty() && res->rep.warnings.front().code == master::WarnSilent;
-        setStatus (cancelFlag ? tr ("Annulé.") : (silent ? tr ("Morceau silencieux : rien à masteriser.") : tr ("Fichier illisible ou trop long.")), true);
+        setStatus (cancelFlag ? tr ("Annulé.") : (silent ? tr ("Morceau silencieux : rien à masteriser.") : tr ("Mastering impossible.")), true);
         updateEnabled(); repaint(); return;
     }
     mastered = res;

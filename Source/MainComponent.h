@@ -17,6 +17,7 @@ struct Loaded
     std::vector<float> peaks;      // 2 valeurs par colonne : crête, RMS
     juce::String name, meta;
     juce::File file;
+    juce::String error;            // clé de traduction si ok == false
 };
 
 struct Mastered
@@ -55,6 +56,8 @@ public:
     void runMaster() { startMaster(); }
     void exportToFile (const juce::File& f, int bits);
     bool isBusy() const { return busy; }
+    bool hasTrack() const { return track && track->ok; }
+    juce::String statusMessage() const { return statusText; }
     bool hasMaster() const { return mastered && mastered->ok; }
     const master::Report* lastReport() const { return mastered ? &mastered->rep : nullptr; }
     juce::AudioBuffer<float> renderPlaybackForTest (double deviceFs, int blockSize, int numBlocks, bool useMaster);

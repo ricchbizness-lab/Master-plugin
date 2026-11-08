@@ -14,6 +14,17 @@ int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
     if (argc < 3) return 1;
+    if (juce::String (argv[1]) == "load")   // UiTest load f1 f2 ... : chargement seul, affiche le statut
+    {
+        for (int i = 2; i < argc; ++i)
+        {
+            ui::MainComponent m;
+            m.openTrack (juce::File (argv[i]));
+            pump (m, 60000);
+            std::printf ("%-28s -> %s | %s\n", juce::File (argv[i]).getFileName().toRawUTF8(), m.hasTrack() ? "OK" : "ECHEC", m.statusMessage().toRawUTF8());
+        }
+        return 0;
+    }
     int fails = 0;
     const auto check = [&] (const char* n, bool ok, double v) { std::printf ("  [%s] %s (%.4f)\n", ok ? "OK " : "KO!", n, v); if (! ok) ++fails; };
     ui::MainComponent mc;
