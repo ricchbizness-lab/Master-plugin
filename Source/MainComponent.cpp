@@ -227,7 +227,7 @@ public:
     void paint (Graphics& g) override
     {
         auto r = getLocalBounds().toFloat().reduced (1.0f);
-        g.setColour (Colour (0xff0d0818));
+        g.setColour (inkWell);
         g.fillRoundedRectangle (r, 10.0f);
         Path p; p.addRoundedRectangle (r, 10.0f);
         PathStrokeType st (1.2f);
@@ -272,7 +272,7 @@ public:
     void paint (Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
-        g.setColour (Colour (0xff0b0715)); g.fillRoundedRectangle (r, 10.0f);
+        g.setColour (inkWell); g.fillRoundedRectangle (r, 10.0f);
         g.setColour (border.withAlpha (0.6f)); g.drawRoundedRectangle (r.reduced (0.5f), 10.0f, 1.0f);
         const float mid = r.getCentreY(), half = r.getHeight() * 0.5f - 6.0f;
         g.setColour (Colours::white.withAlpha (0.05f)); g.drawHorizontalLine ((int) mid, r.getX() + 6, r.getRight() - 6);
@@ -294,7 +294,7 @@ public:
         if (! orig.empty() && ! mast.empty())
         {
             // les deux courbes sont tracées à leur niveau réel : on voit le gain de volume du master
-            draw (orig, Colour (0xff8f80b0).withAlpha (showMaster ? 0.30f : 0.55f), Colour (0xffc5b5e8).withAlpha (showMaster ? 0.35f : 0.8f));
+            draw (orig, Colour (0xff7d7a90).withAlpha (showMaster ? 0.30f : 0.55f), Colour (0xffb9b6c9).withAlpha (showMaster ? 0.35f : 0.8f));
             draw (mast, violet.withAlpha (showMaster ? 0.55f : 0.0f), violetHi.withAlpha (showMaster ? 0.9f : 0.0f));
             if (showMaster)   // contour de l'original par-dessus : on voit ce que le master a ajouté
             {
@@ -310,7 +310,7 @@ public:
                 g.strokePath (top, PathStrokeType (1.0f)); g.strokePath (bot, PathStrokeType (1.0f));
             }
         }
-        else draw (orig, Colour (0xff8f80b0).withAlpha (0.55f), Colour (0xffc5b5e8).withAlpha (0.85f));
+        else draw (orig, Colour (0xff7d7a90).withAlpha (0.55f), Colour (0xffb9b6c9).withAlpha (0.85f));
         if (orig.empty())
         {
             g.setColour (textDimmer); g.setFont (font (12.0f));
@@ -338,7 +338,7 @@ public:
     void paint (Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
-        g.setColour (Colour (0xff0b0715)); g.fillRoundedRectangle (r, 10.0f);
+        g.setColour (inkWell); g.fillRoundedRectangle (r, 10.0f);
         g.setColour (border.withAlpha (0.6f)); g.drawRoundedRectangle (r.reduced (0.5f), 10.0f, 1.0f);
         auto plot = r.reduced (10.0f, 8.0f); plot.removeFromBottom (14.0f);
         const float yMin = -42.0f, yMax = 12.0f;
@@ -376,7 +376,7 @@ public:
         }
         if (! before.empty())
         {
-            g.setColour (Colour (0xffc5b5e8).withAlpha (after.empty() ? 0.9f : 0.5f));
+            g.setColour (Colour (0xffb9b6c9).withAlpha (after.empty() ? 0.9f : 0.5f));
             g.strokePath (path (before, false), PathStrokeType (1.5f));
         }
         if (! after.empty())
@@ -401,7 +401,7 @@ public:
             lx -= 14.0f; g.fillRect (lx, plot.getY() + 6.0f, 9.0f, 2.0f); lx -= 8.0f;
         };
         if (! after.empty()) legend (tr ("Après"), violetHi);
-        if (! before.empty()) legend (tr ("Avant"), Colour (0xffc5b5e8));
+        if (! before.empty()) legend (tr ("Avant"), Colour (0xffb9b6c9));
         if (! target.empty()) legend (tr ("Cible"), Colours::white.withAlpha (0.55f));
     }
 };
@@ -419,7 +419,7 @@ public:
         const int x0 = 10, colB = 212, colA = 284, w = getWidth();
         g.setFont (font (10.0f, true, 0.1f)); g.setColour (textDimmer);
         g.drawText (upper (tr ("Avant")), colB - 60, 0, 60, 16, Justification::centredRight);
-        if (hasAfter) { g.setColour (violetHi); g.drawText (upper (tr ("Après")), colA - 60, 0, 60, 16, Justification::centredRight); }
+        if (hasAfter) { g.setColour (champagne); g.drawText (upper (tr ("Après")), colA - 60, 0, 60, 16, Justification::centredRight); }
         const auto& A = before; const auto* B = hasAfter ? &m->rep.after : nullptr;
         struct Row { String label; String a, b; bool bad; };
         const auto f1 = [] (double v) { return String (v, 1); };
@@ -436,7 +436,7 @@ public:
             g.drawText (rw.label, x0, y, 150, 20, Justification::centredLeft);
             g.setColour (textDimmer); g.setFont (font (11.0f, true));
             g.drawText (rw.a, colB - 76, y, 76, 20, Justification::centredRight);
-            if (B) { g.setColour (rw.bad ? amber : text); g.drawText (rw.b, colA - 76, y, 76, 20, Justification::centredRight); }
+            if (B) { g.setColour (rw.bad ? amber : champagne); g.drawText (rw.b, colA - 76, y, 76, 20, Justification::centredRight); }
             g.setColour (Colours::white.withAlpha (0.05f)); g.drawHorizontalLine (y + 20, (float) x0, (float) colA);
             y += 21;
         }
@@ -515,7 +515,10 @@ MainComponent::MainComponent()
         c.onClick = [this, i] { setContentIndex (i); };
     }
     contentBtn[0].setToggleState (true, dontSendNotification);
-    addAndMakeVisible (matchToggle); addAndMakeVisible (refToggle); addAndMakeVisible (formatBox);
+    addAndMakeVisible (matchToggle); addAndMakeVisible (refToggle); addAndMakeVisible (formatBox); addAndMakeVisible (platformBox);
+    addAndMakeVisible (roomBtn); roomBtn.setClickingTogglesState (true);
+    roomBtn.onClick = [this] { markDirty(); };
+    platformBox.onChange = [this] { setPlatform (platformBox.getSelectedId()); };
 
     abOrig.setClickingTogglesState (true); abMaster.setClickingTogglesState (true);
     abOrig.setRadioGroupId (2); abMaster.setRadioGroupId (2);
@@ -555,10 +558,10 @@ MainComponent::MainComponent()
         k.setRotaryParameters (MathConstants<float>::pi * 1.2f, MathConstants<float>::pi * 2.8f, true);
         k.setRange (ranges[i].lo, ranges[i].hi, ranges[i].step);
         k.setDoubleClickReturnValue (false, 0.0);
-        k.onValueChange = [this] { markDirty(); repaint (342, 500, 440, 124); };
+        k.onValueChange = [this, i] { if (i == 0) platformBox.setSelectedId (1, dontSendNotification); markDirty(); repaint (342, 500, 440, 124); };
         addAndMakeVisible (k);
     }
-    formatBox.addItem ("24 bits", 1); formatBox.addItem ("16 bits", 2); formatBox.addItem ("32 float", 3);
+    formatBox.addItem ("24 bits", 1); formatBox.addItem ("16 bits", 2); formatBox.addItem ("32 float", 3); formatBox.addItem ("FLAC 24", 4);
     formatBox.setSelectedId (1, dontSendNotification);
 
     player = std::make_unique<Player>();
@@ -591,8 +594,14 @@ void MainComponent::relabel()
     refToggle.setButtonText (tr ("Utiliser comme référence"));
     const int sel = formatBox.getSelectedId();
     formatBox.clear (dontSendNotification);
-    formatBox.addItem (tr ("24 bits"), 1); formatBox.addItem (tr ("16 bits"), 2); formatBox.addItem (tr ("32 float"), 3);
+    formatBox.addItem (tr ("24 bits"), 1); formatBox.addItem (tr ("16 bits"), 2); formatBox.addItem (tr ("32 float"), 3); formatBox.addItem ("FLAC 24", 4);
     formatBox.setSelectedId (sel > 0 ? sel : 1, dontSendNotification);
+    const int psel = platformBox.getSelectedId();
+    platformBox.clear (dontSendNotification);
+    platformBox.addItem (tr ("Plateforme : libre"), 1); platformBox.addItem ("Spotify · YouTube  -14", 2);
+    platformBox.addItem ("Apple Music  -16", 3); platformBox.addItem ("Club · DJ  -9", 4);
+    platformBox.setSelectedId (psel > 0 ? psel : 1, dontSendNotification);
+    roomBtn.setButtonText (tr ("Place voix"));
     trackZone->hint = tr ("Glisse un fichier audio ici (WAV, MP3, FLAC, AIFF) ou clique pour parcourir");
     refZone->hint = tr ("Glisse un morceau de référence (optionnel)");
     langFr.setToggleState (! en, dontSendNotification); langEn.setToggleState (en, dontSendNotification);
@@ -613,7 +622,7 @@ void MainComponent::paint (Graphics& g)
         const auto& img = galaxyImage();
         g.saveState();
         g.reduceClipRegion (0, 0, designW, 70);
-        g.setOpacity (0.30f);
+        g.setOpacity (0.16f);
         g.drawImage (img, Rectangle<float> (0, -150, (float) designW, (float) designW * img.getHeight() / img.getWidth()), RectanglePlacement::stretchToFit);
         g.setGradientFill (ColourGradient (Colours::transparentBlack, 0, 0, bg1, 0, 70, false));
         g.fillRect (0, 0, designW, 70);
@@ -688,8 +697,10 @@ void MainComponent::resized()
         knobs[i].setBounds (342 + 18 + i * 82, 500 + 28, 58, 58);
     contentBtn[0].setBounds (150, 500 + 4, 82, 24);
     contentBtn[1].setBounds (234, 500 + 4, 88, 24);
-    exportBtn.setBounds (808, 500 + 28, 158, 44);
-    formatBox.setBounds (808, 500 + 82, 158, 30);
+    platformBox.setBounds (808, 500 + 10, 158, 26);
+    roomBtn.setBounds (230, 500 + 74, 92, 32);
+    exportBtn.setBounds (808, 500 + 44, 158, 38);
+    formatBox.setBounds (808, 500 + 90, 158, 26);
     langFr.setBounds (designW - 20 - 76, 22, 36, 24);
     langEn.setBounds (designW - 20 - 38, 22, 36, 24);
 }
@@ -706,6 +717,7 @@ master::Settings MainComponent::currentSettings() const
     s.width = (float) knobs[4].getValue() / 100.0f;
     s.ceilingDb = -1.0f;
     s.content = contentIndex;
+    s.vocalRoom = roomBtn.getToggleState() && contentIndex == 0;
     return s;
 }
 
@@ -715,6 +727,7 @@ void MainComponent::setStyleIndex (int i)
     for (int k = 0; k < master::kNumStyles; ++k) chips[k].setToggleState (k == styleIndex, dontSendNotification);
     const auto s = master::settingsForStyle (styleIndex);
     knobs[0].setValue (s.targetLufs, dontSendNotification);
+    platformBox.setSelectedId (1, dontSendNotification);
     knobs[1].setValue (s.glue * 100.0, dontSendNotification);
     knobs[2].setValue (s.punch * 100.0, dontSendNotification);
     knobs[3].setValue (s.bright * 3.0, dontSendNotification);
@@ -725,10 +738,17 @@ void MainComponent::setStyleIndex (int i)
     repaint();
 }
 
+void MainComponent::setPlatform (int id)
+{
+    static const double lufs[] = { 0.0, 0.0, -14.0, -16.0, -9.0 };
+    if (id >= 2 && id <= 4) { knobs[0].setValue (lufs[id], dontSendNotification); markDirty(); repaint(); }
+}
+
 void MainComponent::setContentIndex (int i)
 {
     contentIndex = jlimit (0, 1, i);
     for (int k = 0; k < 2; ++k) contentBtn[k].setToggleState (k == contentIndex, dontSendNotification);
+    roomBtn.setVisible (contentIndex == 0);
     markDirty();
     repaint();
 }
@@ -885,8 +905,9 @@ bool writeWav (const master::Stereo& a, const File& f, int bits, const std::func
     f.deleteFile();
     std::unique_ptr<FileOutputStream> os (f.createOutputStream());
     if (! os || os->failedToOpen()) return false;
-    WavAudioFormat wav;
-    std::unique_ptr<AudioFormatWriter> w (wav.createWriterFor (os.get(), a.fs, 2, bits, {}, 0));
+    WavAudioFormat wav; FlacAudioFormat flac;
+    std::unique_ptr<AudioFormatWriter> w (bits < 0 ? flac.createWriterFor (os.get(), a.fs, 2, -bits, {}, 5)
+                                                   : wav.createWriterFor (os.get(), a.fs, 2, bits, {}, 0));
     if (! w) return false;
     os.release();
     const int n = a.size(), chunk = 1 << 16;
@@ -1022,9 +1043,11 @@ void MainComponent::applyLive (std::shared_ptr<Mastered> res, int gen, bool useR
 void MainComponent::startExport()
 {
     if (busy || ! mastered || ! mastered->ok || ! track) return;
-    const int bits = formatBox.getSelectedId() == 2 ? 16 : (formatBox.getSelectedId() == 3 ? 32 : 24);
-    const File def = track->file.getParentDirectory().getChildFile (track->file.getFileNameWithoutExtension() + "_master.wav");
-    chooser = std::make_unique<FileChooser> (tr ("EXPORTER…"), def, "*.wav");
+    const int fmt = formatBox.getSelectedId();
+    const int bits = fmt == 4 ? -24 : (fmt == 2 ? 16 : (fmt == 3 ? 32 : 24));   // négatif = FLAC
+    const char* ext = bits < 0 ? "flac" : "wav";
+    const File def = track->file.getParentDirectory().getChildFile (track->file.getFileNameWithoutExtension() + "_master." + ext);
+    chooser = std::make_unique<FileChooser> (tr ("EXPORTER…"), def, String ("*.") + ext);
     chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::warnAboutOverwriting, [this, bits] (const FileChooser& fc)
     {
         File f = fc.getResult();
@@ -1036,7 +1059,7 @@ void MainComponent::exportToFile (const File& file, int bits)
 {
     if (busy || ! mastered || ! mastered->ok) return;
     File f = file;
-    if (! f.hasFileExtension ("wav")) f = f.withFileExtension ("wav");
+    if (! f.hasFileExtension (bits < 0 ? "flac" : "wav")) f = f.withFileExtension (bits < 0 ? "flac" : "wav");
     if (! mastered->full)   // le fichier exporté est toujours le rendu exact : on attend la fin du calcul
     {
         pendingExport = f; pendingExportBits = bits;

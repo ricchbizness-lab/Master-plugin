@@ -8,7 +8,7 @@ Application de mastering assisté (Windows / macOS), dans l'esprit de Waves Onli
 3. Choisis un style (Équilibré, Club, Chaud, Transparent, Rap / Trap), ajuste Volume (LUFS cible), Glue, Punch, Brillance, Largeur.
 4. Écoute en direct : chaque réglage (style, potards, référence) s’entend en ~0,5 s pendant la lecture ; le calcul exact finit quelques secondes après. Compare avec ORIGINAL / MASTER (« Volume égalisé » : même volume perçu). EXPORTER… écrit toujours le rendu exact.
 5. Choisis INSTRU (beat sans voix) ou AVEC VOIX (de-esser, présence de la voix préservée, centre ferme). La référence reste utilisable dans les deux modes.
-5. EXPORTER : WAV 24 bits (par défaut), 16 bits (dither TPDF) ou 32 float.
+5. EXPORTER : WAV 24 bits (par défaut), 16 bits (dither TPDF), 32 float ou FLAC 24. « Plateforme » règle le volume cible (Spotify/YouTube -14, Apple -16, Club -9) ; « Place voix » (instru) laisse de la place à un chanteur.
 
 ## Chaîne de traitement (offline, fichier entier)
 1. Analyse : volume intégré (LUFS, BS.1770-4), LRA, true-peak (x4), corrélation, spectre en tiers d'octave.

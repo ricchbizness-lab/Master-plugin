@@ -143,6 +143,11 @@ static void eqStage (Stereo& w, const Analysis& before, const Settings& s, Repor
         const double hiShelf = 1.0 / (1.0 + (5000.0 / f) * (5000.0 / f));
         if (! useRef) curve[(size_t) b] += (float) (st.bassDb * (voice ? 0.5 : 1.0) * lowShelf + st.trebleDb * hiShelf);
         curve[(size_t) b] += (float) (s.bright * 3.0 * hiShelf);
+        if (! voice && s.vocalRoom)   // « place pour la voix » : creux large (~1,5 octave) centré sur 2 kHz, -2 dB
+        {
+            const double o = std::log2 (f / 2000.0);
+            curve[(size_t) b] -= (float) (2.0 * std::exp (-(o * o) / (2.0 * 0.75 * 0.75)));
+        }
     }
     rep.eqCurveDb = curve;
 

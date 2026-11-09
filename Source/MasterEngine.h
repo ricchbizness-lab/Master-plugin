@@ -43,6 +43,7 @@ struct Settings
     float targetLufs = -14.0f;
     float glue = 0.4f, punch = 0.5f, bright = 0.0f, width = 1.0f;  // glue/punch 0..1, bright -1..1, width 0..1.5
     float ceilingDb = -1.0f;
+    bool vocalRoom = false;               // instru : creux doux autour de 2 kHz pour laisser la place à une voix
     int content = 0;                      // 0 = instrumental (beat), 1 = morceau avec voix
     const Analysis* reference = nullptr;  // si non nul : le spectre de référence remplace la courbe du style
 };

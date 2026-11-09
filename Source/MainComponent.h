@@ -50,6 +50,7 @@ public:
     void masterSync();
     void setStyleIndex (int i);
     void setContentIndex (int i);
+    void setPlatform (int id);
     void setEnglish (bool en);
     void setAB (bool master);
     void setPlayheadForSnapshot (double fraction);
@@ -111,6 +112,8 @@ private:
     std::unique_ptr<TransportButton> playBtn;
     juce::TextButton abOrig, abMaster, masterBtn, exportBtn, langFr, langEn;
     juce::TextButton chips[master::kNumStyles];
+    juce::ComboBox platformBox;       // cibles de volume (LUFS) par plateforme
+    juce::TextButton roomBtn;         // instru : « place pour la voix »
     juce::TextButton contentBtn[2];   // 0 = Instru, 1 = Avec voix
     juce::ToggleButton matchToggle, refToggle;
     juce::Slider knobs[5];

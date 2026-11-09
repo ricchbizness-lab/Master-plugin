@@ -8,10 +8,12 @@
 namespace ui
 {
 // ------------------------------------------------------------------ Palette (identique à Nebula)
-inline const juce::Colour bg0 { 0xff05030b }, bg1 { 0xff10071f }, surface2 { 0xff171025 }, border { 0xff4a2b78 },
-    text { 0xfffbf8ff }, textDim { 0xffc5b5e8 }, textDimmer { 0xff83729f },
-    violet { 0xffa33cff }, violetHi { 0xffe0c5ff }, violetDark { 0xff5717bd }, orchid { 0xffd878ff },
-    glassTop { 0xff1a102b }, glassBottom { 0xff080610 }, amber { 0xffffc46b }, good { 0xff7be3a8 };
+// Palette premium : encre graphite neutre, violet réservé aux actions et aux données, champagne pour les valeurs clés.
+inline const juce::Colour bg0 { 0xff07070a }, bg1 { 0xff0e0d14 }, surface2 { 0xff17161e }, border { 0xff2c2a38 },
+    text { 0xfff3f1f7 }, textDim { 0xffaeaabf }, textDimmer { 0xff6f6b85 },
+    violet { 0xff8a5cf5 }, violetHi { 0xffcdbcff }, violetDark { 0xff4b2f9e }, orchid { 0xffa98af8 },
+    glassTop { 0xff17161e }, glassBottom { 0xff0b0b10 }, amber { 0xffe8a45a }, good { 0xff7be3a8 },
+    champagne { 0xffdcc79a }, inkWell { 0xff09090d };
 
 inline juce::Typeface::Ptr typeface (int kind)
 {
@@ -75,7 +77,7 @@ inline juce::String tr (const juce::String& fr)
         { "Mastering en cours…", "Mastering…" }, { "Master terminé. Compare avec A/B (volume égalisé).", "Master done. Compare with A/B (loudness matched)." },
         { "Réglages modifiés : relance le mastering.", "Settings changed: run the mastering again." },
         { "Export en cours…", "Exporting…" }, { "Export terminé : ", "Exported: " }, { "Échec de l'export.", "Export failed." },
-        { "Fichier illisible ou trop long.", "Unreadable or too long file." }, { "Format non pris en charge (WAV, AIFF, FLAC, MP3, OGG).", "Unsupported format (WAV, AIFF, FLAC, MP3, OGG)." }, { "Fichier trop court.", "File too short." }, { "Mastering impossible.", "Mastering failed." }, { "Fichier trop long (25 min maximum).", "File too long (25 min maximum)." }, { "Lecture du fichier impossible.", "Could not read the file." }, { "Annulé.", "Cancelled." }, { "INSTRU", "INSTRUMENTAL" }, { "AVEC VOIX", "WITH VOCALS" }, { "Calcul du master…", "Computing master…" }, { "Aperçu en direct… calcul exact en cours.", "Live preview… exact render in progress." },
+        { "Fichier illisible ou trop long.", "Unreadable or too long file." }, { "Format non pris en charge (WAV, AIFF, FLAC, MP3, OGG).", "Unsupported format (WAV, AIFF, FLAC, MP3, OGG)." }, { "Fichier trop court.", "File too short." }, { "Mastering impossible.", "Mastering failed." }, { "Fichier trop long (25 min maximum).", "File too long (25 min maximum)." }, { "Lecture du fichier impossible.", "Could not read the file." }, { "Annulé.", "Cancelled." }, { "Plateforme : libre", "Platform: free" }, { "Place voix", "Vocal room" }, { "INSTRU", "INSTRUMENTAL" }, { "AVEC VOIX", "WITH VOCALS" }, { "Calcul du master…", "Computing master…" }, { "Aperçu en direct… calcul exact en cours.", "Live preview… exact render in progress." },
         { "Master prêt. Chaque réglage s'écoute en direct (A/B à volume égalisé).", "Master ready. Every setting is heard live (A/B, loudness matched)." },
         { "Calcul du master… l'export démarrera ensuite.", "Computing master… export will start right after." }, { "MP3 invalide ou corrompu.", "Invalid or corrupt MP3." },
         { "Morceau silencieux : rien à masteriser.", "Silent file: nothing to master." },
@@ -111,21 +113,19 @@ inline void drawGlass (juce::Graphics& g, juce::Rectangle<float> r, float radius
     juce::Path p;
     p.addRoundedRectangle (r, radius);
     juce::DropShadow (juce::Colours::black.withAlpha (0.5f), 18, { 0, 7 }).drawForPath (g, p);
-    g.setColour (juce::Colour (0xff07050f));
+    g.setColour (inkWell);
     g.fillPath (p);
-    g.setGradientFill (juce::ColourGradient (glassTop.withAlpha (0.98f), r.getX(), r.getY(), glassBottom, r.getX() + r.getWidth() * 0.22f, r.getBottom(), false));
+    g.setGradientFill (juce::ColourGradient (glassTop, r.getX(), r.getY(), glassBottom, r.getX(), r.getBottom(), false));
     g.fillPath (p);
-    g.saveState();
-    g.reduceClipRegion (r.withHeight (r.getHeight() * 0.42f).toNearestInt());
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffc8a0ff).withAlpha (0.07f), r.getX(), r.getY(), juce::Colours::transparentBlack, r.getX(), r.getCentreY(), false));
-    g.fillPath (p);
-    g.restoreState();
     juce::Path outer;
     outer.addRoundedRectangle (r.reduced (0.5f), radius);
-    g.setColour (violet.withAlpha (0.22f));
-    g.strokePath (outer, juce::PathStrokeType (2.6f));
-    g.setGradientFill (juce::ColourGradient (violetHi.withAlpha (0.55f), r.getX(), r.getY(), violet.withAlpha (0.2f), r.getRight(), r.getBottom(), false));
-    g.strokePath (outer, juce::PathStrokeType (0.9f));
+    g.setColour (juce::Colours::white.withAlpha (0.07f));   // filet neutre, plus de halo violet
+    g.strokePath (outer, juce::PathStrokeType (1.0f));
+    g.saveState();   // reflet fin sur l'arête haute
+    g.reduceClipRegion (r.withHeight (3.0f).toNearestInt());
+    g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.16f), r.getX(), r.getY(), juce::Colours::white.withAlpha (0.02f), r.getRight(), r.getY(), false));
+    g.strokePath (outer, juce::PathStrokeType (1.0f));
+    g.restoreState();
 }
 
 inline void cardTitle (juce::Graphics& g, juce::Rectangle<int> card, const juce::String& title)
@@ -163,19 +163,19 @@ public:
         const float ang = a0 + pos * (a1 - a0);
         const float ringR = rad - 2.0f;
 
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff261a3c), c.x, c.y - rad, juce::Colour (0xff0a0714), c.x, c.y + rad, false));
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2a2933), c.x, c.y - rad, juce::Colour (0xff0b0b10), c.x, c.y + rad, false));
         g.fillEllipse (c.x - rad + 7.0f, c.y - rad + 7.0f, (rad - 7.0f) * 2.0f, (rad - 7.0f) * 2.0f);
 
         juce::Path track;
         track.addCentredArc (c.x, c.y, ringR, ringR, 0.0f, a0, a1, true);
-        g.setColour (juce::Colour (0xff2a1d45));
+        g.setColour (juce::Colour (0xff282632));
         g.strokePath (track, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         juce::Path val;
         val.addCentredArc (c.x, c.y, ringR, ringR, 0.0f, a0, ang, true);
         const bool hot = s.isMouseOverOrDragging();
-        g.setColour (violet.withAlpha (0.28f));
-        g.strokePath (val, juce::PathStrokeType (8.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (violet.withAlpha (0.16f));
+        g.strokePath (val, juce::PathStrokeType (7.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.setGradientFill (juce::ColourGradient (violetDark, c.x - ringR, c.y + ringR, hot ? violetHi : orchid, c.x + ringR, c.y - ringR, false));
         g.strokePath (val, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
