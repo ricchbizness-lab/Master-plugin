@@ -43,6 +43,7 @@ struct Settings
     float targetLufs = -14.0f;
     float glue = 0.4f, punch = 0.5f, bright = 0.0f, width = 1.0f;  // glue/punch 0..1, bright -1..1, width 0..1.5
     float ceilingDb = -1.0f;
+    int content = 0;                      // 0 = instrumental (beat), 1 = morceau avec voix
     const Analysis* reference = nullptr;  // si non nul : le spectre de référence remplace la courbe du style
 };
 
@@ -52,6 +53,7 @@ struct Report
     std::vector<float> eqCurveDb;       // correction EQ appliquée (dB, par bande)
     std::vector<float> targetBands;     // courbe cible normalisée
     float bandGrDb[3] { 0, 0, 0 };      // réduction moyenne des 3 bandes
+    float deEssGrDb = 0;                // réduction moyenne du de-esser (mode voix)
     float limiterAvgGrDb = 0, limiterMaxGrDb = 0;
     float gainIntoLimiterDb = 0;
     int iterations = 0;

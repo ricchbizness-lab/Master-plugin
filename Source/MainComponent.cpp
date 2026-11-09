@@ -48,7 +48,7 @@ static std::shared_ptr<Loaded> readAndAnalyse (const File& f, const std::functio
     auto fillMeta = [&] (double fs, int ch, int bits)
     {
         meta = String (fs / 1000.0, 1) + " kHz  ·  " + String (ch) + (ch > 1 ? tr (" canaux") : tr (" canal"))
-             + "  ·  " + fmtTime (a->seconds()) + (bits > 0 ? "  ·  " + String (bits) + " bits" : String());
+             + "  ·  " + fmtTime (a->seconds()) + (bits > 0 ? String::fromUTF8 ("  ·  ") + String (bits) + " bits" : String());
     };
 
     // MP3 : décodeur dédié d'abord (tolère tags ID3, pochettes, VBR...), JUCE en secours
@@ -444,7 +444,8 @@ public:
         if (hasAfter)
         {
             const auto& rp = m->rep;
-            g.drawText (tr ("Compression multibande") + String::formatted (": %.1f / %.1f / %.1f dB", rp.bandGrDb[0], rp.bandGrDb[1], rp.bandGrDb[2]), x0, y + 3, colA - x0, 14, Justification::centredLeft);
+            g.drawText (tr ("Compression multibande") + String::formatted (": %.1f / %.1f / %.1f dB", rp.bandGrDb[0], rp.bandGrDb[1], rp.bandGrDb[2])
+                            + (m->settings.content == 1 ? "  |  De-esser" + String::formatted (": %.1f dB", rp.deEssGrDb) : String()), x0, y + 3, colA - x0, 14, Justification::centredLeft);
             g.drawText (tr ("Limiteur") + String::formatted (": %.1f dB ", rp.limiterAvgGrDb) + tr ("moy.") + String::formatted (", max %.1f dB  |  ", rp.limiterMaxGrDb)
                             + tr ("Cible") + String::formatted (" %.1f LUFS", m->settings.targetLufs), x0, y + 17, colA - x0 + 10, 14, Justification::centredLeft);
         }
@@ -507,6 +508,13 @@ MainComponent::MainComponent()
     for (auto* b : { &abOrig, &abMaster, &exportBtn, &langFr, &langEn })
         addAndMakeVisible (b);
     for (auto& c : chips) addAndMakeVisible (c);
+    for (int i = 0; i < 2; ++i)
+    {
+        auto& c = contentBtn[i];
+        addAndMakeVisible (c); c.setClickingTogglesState (true); c.setRadioGroupId (5);
+        c.onClick = [this, i] { setContentIndex (i); };
+    }
+    contentBtn[0].setToggleState (true, dontSendNotification);
     addAndMakeVisible (matchToggle); addAndMakeVisible (refToggle); addAndMakeVisible (formatBox);
 
     abOrig.setClickingTogglesState (true); abMaster.setClickingTogglesState (true);
@@ -576,6 +584,7 @@ void MainComponent::relabel()
 {
     const bool en = englishRef();
     for (int i = 0; i < master::kNumStyles; ++i) chips[i].setButtonText (CharPointer_UTF8 (en ? master::style (i).nameEn : master::style (i).nameFr));
+    contentBtn[0].setButtonText (tr ("INSTRU")); contentBtn[1].setButtonText (tr ("AVEC VOIX"));
     abOrig.setButtonText (tr ("ORIGINAL")); abMaster.setButtonText (tr ("MASTER"));
     exportBtn.setButtonText (tr ("EXPORTER…"));
     matchToggle.setButtonText (tr ("Volume égalisé"));
@@ -677,6 +686,8 @@ void MainComponent::resized()
         chips[i].setBounds (34 + (i % 3) * 98, 500 + 34 + (i / 3) * 40, 92, 32);
     for (int i = 0; i < 5; ++i)
         knobs[i].setBounds (342 + 18 + i * 82, 500 + 28, 58, 58);
+    contentBtn[0].setBounds (150, 500 + 4, 82, 24);
+    contentBtn[1].setBounds (234, 500 + 4, 88, 24);
     exportBtn.setBounds (808, 500 + 28, 158, 44);
     formatBox.setBounds (808, 500 + 82, 158, 30);
     langFr.setBounds (designW - 20 - 76, 22, 36, 24);
@@ -694,6 +705,7 @@ master::Settings MainComponent::currentSettings() const
     s.bright = (float) knobs[3].getValue() / 3.0f;
     s.width = (float) knobs[4].getValue() / 100.0f;
     s.ceilingDb = -1.0f;
+    s.content = contentIndex;
     return s;
 }
 
@@ -709,6 +721,14 @@ void MainComponent::setStyleIndex (int i)
     knobs[4].setValue (s.width * 100.0, dontSendNotification);
     if (refToggle.getToggleState() && reference && reference->ok)
         knobs[0].setValue (jlimit (-20.0, -6.0, std::round (reference->an.lufs * 2.0) / 2.0), dontSendNotification);
+    markDirty();
+    repaint();
+}
+
+void MainComponent::setContentIndex (int i)
+{
+    contentIndex = jlimit (0, 1, i);
+    for (int k = 0; k < 2; ++k) contentBtn[k].setToggleState (k == contentIndex, dontSendNotification);
     markDirty();
     repaint();
 }

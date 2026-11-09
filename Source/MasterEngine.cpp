@@ -99,7 +99,8 @@ static void eqStage (Stereo& w, const Analysis& before, const Settings& s, Repor
     const double fs = w.fs;
     const bool useRef = s.reference && s.reference->valid;
     const float maxDb = useRef ? 4.0f : 3.0f;
-    const float amount = useRef ? 0.8f : st.eqAmount;
+    const bool voice = s.content == 1;
+    const float amount = (useRef ? 0.8f : st.eqAmount) * (voice ? 0.75f : 1.0f);   // voix : on corrige moins, le mix est déjà équilibré
 
     const auto target = useRef ? normaliseBands (s.reference->bands) : normaliseBands (genericTarget());
     const auto meas = normaliseBands (before.bands);
@@ -129,7 +130,9 @@ static void eqStage (Stereo& w, const Analysis& before, const Settings& s, Repor
     for (int b = 0; b < kBands; ++b)
     {
         const double f = bandCentre (b);
-        const float lim = (f < 40.0 || f > 14000.0) ? 1.5f : maxDb;
+        float lim = (f < 40.0 || f > 14000.0) ? 1.5f : maxDb;
+        if (voice && f >= 1000.0 && f <= 4500.0) lim = 1.5f;   // zone de présence de la voix : pas de grosse correction
+
         curve[(size_t) b] = std::clamp (d[(size_t) b], -lim, lim) * amount;
     }
     // Teintes du style et réglage Brillance
@@ -138,7 +141,7 @@ static void eqStage (Stereo& w, const Analysis& before, const Settings& s, Repor
         const double f = bandCentre (b);
         const double lowShelf = 1.0 / (1.0 + (f / 110.0) * (f / 110.0));
         const double hiShelf = 1.0 / (1.0 + (5000.0 / f) * (5000.0 / f));
-        if (! useRef) curve[(size_t) b] += (float) (st.bassDb * lowShelf + st.trebleDb * hiShelf);
+        if (! useRef) curve[(size_t) b] += (float) (st.bassDb * (voice ? 0.5 : 1.0) * lowShelf + st.trebleDb * hiShelf);
         curve[(size_t) b] += (float) (s.bright * 3.0 * hiShelf);
     }
     rep.eqCurveDb = curve;
@@ -197,14 +200,15 @@ static bool multibandStage (Stereo& w, const std::vector<char>& active, int hop,
     if (cnt == 0) return true;
 
     struct Band { float thr = 0, thrLin = 0, ratio = 2, atk = 0, rel = 0, env = 0; double grSum = 0.0; } band[3];
-    const float atkMs[3] = { 25.0f, 12.0f, 4.0f }, relMs[3] = { 220.0f, 140.0f, 90.0f };
+    const bool voice = s.content == 1;
+    const float atkMs[3] = { 25.0f, voice ? 18.0f : 12.0f, 4.0f }, relMs[3] = { 220.0f, 140.0f, 90.0f };   // voix : attaque médium plus lente, transitoires préservés
     const float pf = 0.4f + 1.2f * s.punch, rs = st.releaseMs / 80.0f;
     for (int b = 0; b < 3; ++b)
     {
         const float rmsDb = (float) (10.0 * std::log10 (ms[b] / (double) cnt + 1e-14));
         band[b].thr = rmsDb + 2.0f - 5.0f * s.glue;
         band[b].thrLin = dbToLin (band[b].thr);
-        band[b].ratio = std::max (1.05f, (1.3f + 1.7f * s.glue) * (b == 2 ? 0.8f : 1.0f));
+        band[b].ratio = std::max (1.05f, (1.3f + 1.7f * s.glue) * (b == 2 ? 0.8f : (voice && b == 1 ? 0.85f : 1.0f)));
         band[b].atk = std::exp (-1.0f / (atkMs[b] * pf * 0.001f * (float) fs));
         band[b].rel = std::exp (-1.0f / (relMs[b] * rs * 0.001f * (float) fs));
     }
@@ -241,6 +245,50 @@ static bool multibandStage (Stereo& w, const std::vector<char>& active, int hop,
         if ((i & 0xFFFFF) == 0 && progress && ! progress (0.3f + (float) i / n * 0.7f)) return false;
     }
     for (int b = 0; b < 3; ++b) rep.bandGrDb[b] = act > 0 ? (float) (-band[b].grSum / (double) act) : 0.0f;
+    return true;
+}
+
+// De-esser (mode voix) : réduit dynamiquement la bande > 5,5 kHz quand les sibilantes dépassent le niveau moyen du morceau.
+static bool deEssStage (Stereo& w, const std::vector<char>& active, int hop, Report& rep, const ProgressFn& progress)
+{
+    const int n = w.size();
+    juce::dsp::ProcessSpec spec { w.fs, 512, 2 };
+    juce::dsp::LinkwitzRileyFilter<float> xo;
+    const auto prep = [&] { xo.prepare (spec); xo.reset(); xo.setCutoffFrequency (5500.0f); };
+    float lo[2], hi[2];
+    const auto split = [&] (float l, float r)
+    {
+        const float in[2] = { l, r };
+        for (int ch = 0; ch < 2; ++ch) xo.processSample (ch, in[ch], lo[ch], hi[ch]);
+    };
+    prep();
+    double ms = 0.0; long cnt = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        split (w.l[(size_t) i], w.r[(size_t) i]);
+        if (isActive (active, i, hop)) { const double m = 0.5 * ((double) hi[0] + hi[1]); ms += m * m; ++cnt; }
+        if ((i & 0xFFFFF) == 0 && progress && ! progress ((float) i / n * 0.4f)) return false;
+    }
+    if (cnt == 0) return true;
+    const float thr = (float) (10.0 * std::log10 (ms / (double) cnt + 1e-14)) + 3.5f;   // dB (puissance)
+    const float atk = std::exp (-1.0f / (0.0005f * (float) w.fs)), rel = std::exp (-1.0f / (0.045f * (float) w.fs));
+    const float ratio = 3.0f, maxGr = -6.0f;
+    prep();
+    float env = 0.0f; double grSum = 0.0; long act = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        split (w.l[(size_t) i], w.r[(size_t) i]);
+        const float lvl = std::abs (0.5f * (hi[0] + hi[1]));
+        env = lvl > env ? lvl + (env - lvl) * atk : lvl + (env - lvl) * rel;
+        float gr = 0.0f;
+        const float envDb = 20.0f * std::log10 (env + 1.0e-9f);
+        if (envDb > thr) gr = std::max (maxGr, -(envDb - thr) * (1.0f - 1.0f / ratio));
+        const float g = std::exp (gr * 0.11512925f);
+        w.l[(size_t) i] = lo[0] + hi[0] * g; w.r[(size_t) i] = lo[1] + hi[1] * g;
+        if (isActive (active, i, hop)) { grSum += gr; ++act; }
+        if ((i & 0xFFFFF) == 0 && progress && ! progress (0.4f + (float) i / n * 0.6f)) return false;
+    }
+    rep.deEssGrDb = act > 0 ? (float) (-grSum / (double) act) : 0.0f;
     return true;
 }
 
@@ -282,6 +330,7 @@ static void saturationStage (Stereo& w, float amount)
 
 static void stereoStage (Stereo& w, float width)
 {
+    // (la limite de largeur du mode voix est appliquée par l'appelant)
     juce::dsp::LinkwitzRileyFilter<float> hp;
     juce::dsp::ProcessSpec spec { w.fs, 512, 1 };
     hp.prepare (spec); hp.reset(); hp.setCutoffFrequency (120.0f);
@@ -365,10 +414,12 @@ bool masterAudio (const Stereo& in, const Analysis& before, const Settings& s, S
     if (! prog (0.02f)) return false;
     eqStage (w, before, s, rep);
     if (! prog (0.2f)) return false;
-    if (! multibandStage (w, active, hop, s, rep, step (0.2f, 0.5f))) return false;
-    saturationStage (w, style (s.style).sat);
+    const bool voice = s.content == 1;
+    if (voice && ! deEssStage (w, active, hop, rep, step (0.2f, 0.3f))) return false;
+    if (! multibandStage (w, active, hop, s, rep, step (0.3f, 0.5f))) return false;
+    saturationStage (w, style (s.style).sat * (voice ? 0.6f : 1.0f));
     if (! prog (0.62f)) return false;
-    stereoStage (w, s.width);
+    stereoStage (w, voice ? std::min (s.width, 1.1f) : s.width);   // voix : le centre reste ferme, élargissement limité
     if (! prog (0.7f)) return false;
 
     // ---- Loudness + limiteur true-peak
@@ -379,7 +430,7 @@ bool masterAudio (const Stereo& in, const Analysis& before, const Settings& s, S
 
     const float C = dbToLin (s.ceilingDb) * 0.97f;
     const int L = std::max (8, (int) std::lround (w.fs * 0.002));
-    const float relCoef = std::exp (-1.0f / (style (s.style).releaseMs * 0.001f * (float) w.fs));
+    const float relCoef = std::exp (-1.0f / (style (s.style).releaseMs * (voice ? 1.4f : 1.0f) * 0.001f * (float) w.fs));
 
     const auto lw = measureLoudness (w.l.data(), w.r.data(), n, w.fs);
     float gDb = (float) (s.targetLufs - lw.integrated);

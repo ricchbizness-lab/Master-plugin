@@ -49,6 +49,7 @@ public:
     void loadReferenceSync (const juce::File&);
     void masterSync();
     void setStyleIndex (int i);
+    void setContentIndex (int i);
     void setEnglish (bool en);
     void setAB (bool master);
     void setPlayheadForSnapshot (double fraction);
@@ -93,7 +94,7 @@ private:
     juce::String statusText; bool statusError = false;
     std::atomic<float> progress { 0.0f };
     std::atomic<bool> cancelFlag { false };
-    int styleIndex = 0;
+    int styleIndex = 0, contentIndex = 0;
     bool dirty = false, usedReference = false;
     std::atomic<int> liveGen { 0 };
     bool livePending = false, liveComputing = false, autoLive = true;
@@ -110,6 +111,7 @@ private:
     std::unique_ptr<TransportButton> playBtn;
     juce::TextButton abOrig, abMaster, masterBtn, exportBtn, langFr, langEn;
     juce::TextButton chips[master::kNumStyles];
+    juce::TextButton contentBtn[2];   // 0 = Instru, 1 = Avec voix
     juce::ToggleButton matchToggle, refToggle;
     juce::Slider knobs[5];
     juce::ComboBox formatBox;

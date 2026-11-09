@@ -10,6 +10,7 @@ int main (int argc, char** argv)
     if (en) mc.setEnglish (true);
     mc.loadTrackSync (juce::File (argv[2]));
     if (argc > 6) mc.loadReferenceSync (juce::File (argv[6]));
+    if (argc > 7) mc.setContentIndex (juce::String (argv[7]).getIntValue());
     mc.setStyleIndex (argc > 3 ? juce::String (argv[3]).getIntValue() : 0);
     if (! (argc > 5 && juce::String (argv[5]) == "nomaster")) mc.masterSync();
     mc.setPlayheadForSnapshot (0.37);

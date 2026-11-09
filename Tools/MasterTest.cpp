@@ -80,6 +80,7 @@ int main (int argc, char** argv)
     if (! loadWav (juce::File (argv[1]), in)) { std::printf ("lecture impossible\n"); return 2; }
     Settings s = settingsForStyle (argc > 3 ? std::atoi (argv[3]) : 0);
     if (argc > 4) s.targetLufs = (float) std::atof (argv[4]);
+    if (argc > 6) s.content = std::atoi (argv[6]);   // 0 instru, 1 voix
     Analysis ref;
     if (argc > 5) { Stereo r; if (loadWav (juce::File (argv[5]), r)) { ref = analyse (r); s.reference = &ref; } }
 
@@ -94,6 +95,7 @@ int main (int argc, char** argv)
     std::printf ("GR multibande moy.: %.2f / %.2f / %.2f dB   limiteur moy. %.2f dB max %.2f dB   gain avant limiteur %.2f dB\n",
                  rep.bandGrDb[0], rep.bandGrDb[1], rep.bandGrDb[2], rep.limiterAvgGrDb, rep.limiterMaxGrDb, rep.gainIntoLimiterDb);
     std::printf ("EQ (dB) :"); for (int b = 0; b < kBands; b += 3) std::printf (" %.0fHz:%+.1f", bandCentre (b), rep.eqCurveDb[(size_t) b]); std::printf ("\n");
+    std::printf ("de-esser moy.: %.2f dB\n", rep.deEssGrDb);
     for (auto& w : rep.warnings) std::printf ("warning %d (%.2f)\n", w.code, w.value);
 
     juce::File of (argv[2]); of.deleteFile();
